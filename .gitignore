@@ -97,6 +97,9 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
+# Result
+*.mp4
+
 # mkdocs documentation
 /site
 
