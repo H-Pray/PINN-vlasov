@@ -48,4 +48,8 @@
 ## 快速启动命令 (启动Docker环境)
 在 Windows PowerShell 或用终端执行：
 ```bash
-docker run --gpus all -it --rm -e TF_CUDNN_USE_AUTOTUNE=0 -v E:\PINNvlasov:/workspace -w /workspace pinn_vlasov_env /bin/bash
+docker run --gpus all `
+  --shm-size=1g `
+  -v E:\PINNvlasov:/workspace `
+  --name pinn_vlasov_active `
+  -it nvcr.io/nvidia/tensorflow:22.12-tf1-py3
