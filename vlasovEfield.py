@@ -1,4 +1,4 @@
-!pip install pyDOE
+##pip install pyDOE
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -316,7 +316,7 @@ class vlasov1DNN:
 		yield (X_inner, X_i, f_i, X_b, X_t, X_eta, E_inner, E_b, E_t, X_E0, E_0)
 	
 v_max = 3.5
-t_max = 1.
+t_max = 10.
 alpha = 0.2
 V_T = 1
 pi = math.pi
@@ -360,7 +360,7 @@ plt.plot(xx4[:,0],xx4[:,2])
 plt.show()
 
 xx1 = np.stack((np.zeros(N_init**2), np.linspace(-x_max,x_max,N_init**2), np.clip(np.squeeze(np.random.multivariate_normal([0.],[[2.]],N_init**2)),-v_max,v_max)),axis=1)
-ff1 = initialConditions(xx1[:,1],xx1[:,2],alpha,V_T)
+ff1 = vlasov1DNN.initialConditions(xx1[:,1],xx1[:,2],alpha,V_T)
 X_f_train = np.vstack([xx1, xx2, xx3])
 
 X_N_train = lb + (ub-lb)* lhs(3, N_N)
@@ -371,30 +371,31 @@ X_N_train = np.vstack((X_N_train, X_f_train))
 xbE = np.stack((np.linspace(0.,t_max,N_Eb),-x_max*np.ones(N_Eb)),axis=1)
 xtE = np.stack((np.linspace(0.,t_max,N_Eb),x_max*np.ones(N_Eb)),axis=1)
 X_E0 = np.stack((np.zeros(N_Einit),np.linspace(-x_max,x_max,N_Einit)),axis=1)
-E_0 = Einitial(X_E0[:,1],alpha)
+E_0 = vlasov1DNN.Einitial(X_E0[:,1],alpha)
 X_E = lb[0:2] + (ub[0:2]-lb[0:2])* lhs(2, N_E)
 X_E = np.vstack([X_E,xbE,xtE])
 X_E = np.stack([X_E[:,0],X_E[:,1],v_max*np.ones(N_E + 2*N_Eb)],axis=1)
 
-model = vlasov1DNN(lb, ub, layers, layersE, X_N_train, X_E, xx1, ff1, xx2, xx3, xx4, xbE, xtE, X_E0, E_0, generator)
 
 with tf.device('/device:GPU:0'):
-    start_time = time.time()                
-    model.train(2, 64000, 16000, 16000, 0, 4000, 1000, 1000) # N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0
-    elapsed = time.time() - start_time                
-    print('Training time: %.4f' % (elapsed))
+	model = vlasov1DNN(lb, ub, layers, layersE, X_N_train, X_E, xx1, ff1, xx2, xx3, xx4, xbE, xtE, X_E0, E_0,
+					   vlasov1DNN.generator)
+	start_time = time.time()
+	model.train(2, 64000, 16000, 16000, 0, 4000, 1000, 1000) # N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0
+	elapsed = time.time() - start_time
+	print('Training time: %.4f' % (elapsed))
 
-with tf.device('/device:GPU:0'):
-    start_time = time.time()                
-    model.train(1, 32000, 16000, 8000, 0, 8000, 2000, 2000) # N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0
-    elapsed = time.time() - start_time                
-    print('Training time: %.4f' % (elapsed))
-
-with tf.device('/device:GPU:0'):
-    start_time = time.time()                
-    model.train(4, 100000, 10000, 10000, 0, 10000, 2000, 2000) # N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0
-    elapsed = time.time() - start_time                
-    print('Training time: %.4f' % (elapsed))
+# with tf.device('/device:GPU:0'):
+# 	start_time = time.time()
+# 	model.train(1, 32000, 16000, 8000, 0, 8000, 2000, 2000) # N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0
+# 	elapsed = time.time() - start_time
+# 	print('Training time: %.4f' % (elapsed))
+#
+# with tf.device('/device:GPU:0'):
+# 	start_time = time.time()
+# 	model.train(4, 100000, 10000, 10000, 0, 10000, 2000, 2000) # N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0
+# 	elapsed = time.time() - start_time
+# 	print('Training time: %.4f' % (elapsed))
 
 t = np.linspace(0,t_max,100)
 x = np.linspace(-x_max,x_max,100)
@@ -489,50 +490,56 @@ from pylab import *
 dpi = 100
 
 def ani_frame(model):
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.set_aspect('equal')
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
-
-    
-    
-    x = np.linspace(-pi,pi,100)
-    v = np.linspace(-v_max,v_max,100)
-
-    X, V = np.meshgrid(x,v)
-
-    T = np.ones(10000) * t_max
-    t = 0.
-    
-    Xr = np.reshape(X,(10000))
-    Vr = np.reshape(V,(10000))
-    f_initial_pred, _, _, _,_ = model.predict(np.stack((t*T,Xr,Vr),axis=1))
-    f_initial_pred = np.reshape(f_initial_pred, (100,100))
-    
-    im = ax.imshow(f_initial_pred,interpolation='nearest',origin='lower')
-    
-    fig.set_size_inches([8,4])
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+	ax.set_aspect('equal')
+	# ax.get_xaxis().set_visible(False)
+	# ax.get_yaxis().set_visible(False)
 
 
-    tight_layout()
+
+	x = np.linspace(-pi,pi,100)
+	v = np.linspace(-v_max,v_max,100)
+
+	X, V = np.meshgrid(x,v)
+
+	T = np.ones(10000) * t_max
+	t = 0.
+
+	Xr = np.reshape(X,(10000))
+	Vr = np.reshape(V,(10000))
+	f_initial_pred, _, _, _,_ = model.predict(np.stack((t*T,Xr,Vr),axis=1))
+	f_initial_pred = np.reshape(f_initial_pred, (100,100))
+
+	im = ax.imshow(f_initial_pred,interpolation='nearest',origin='lower',
+	               extent=[-pi, pi, -v_max, v_max], aspect='auto')
+
+	fig.colorbar(im, ax=ax, label='f(t, x, v)')
+	ax.set_xlabel('x')
+	ax.set_ylabel('v')
+	ax.set_title('Phase Space Distribution')
+
+	fig.set_size_inches([8,4])
 
 
-    def update_img(n):
-        f_pred, _, _, _,_ = model.predict(np.stack((n*T/100. + 0.01,Xr,Vr),axis=1))
-        f_pred = np.reshape(f_pred, (100,100))
-        im.set_data(f_pred)
-        return im
+	tight_layout()
 
-    #legend(loc=0)
-    ani = animation.FuncAnimation(fig,update_img,100,interval=30)
-    writer = animation.writers['ffmpeg'](fps=30)
 
-    ani.save('vlasov1D.mp4',writer=writer,dpi=dpi)
-    return ani
+	def update_img(n):
+		f_pred, _, _, _,_ = model.predict(np.stack((n*T/100. + 0.01,Xr,Vr),axis=1))
+		f_pred = np.reshape(f_pred, (100,100))
+		im.set_data(f_pred)
+		return im
+
+	#legend(loc=0)
+	ani = animation.FuncAnimation(fig,update_img,100,interval=30)
+	writer = animation.writers['ffmpeg'](fps=30)
+
+	ani.save('vlasov1D.mp4',writer=writer,dpi=dpi)
+	return ani
 
 ani_frame(model)
-print("Done")
+print("Done 2D_distribution")
 
 import matplotlib.animation as animation
 import numpy as np
@@ -541,7 +548,7 @@ from pylab import *
 
 dpi = 100
 
-    
+
 
 
 fig, ax = plt.subplots()
@@ -552,22 +559,27 @@ X= np.linspace(-x_max,x_max,num)
 V = v_max*np.ones(num)
 
 _, _, _, _, E = model.predict(np.stack((t*T,X,V),axis=1))
-line, = ax.plot(E)
+line, = ax.plot(X, E)
+
+ax.set_xlabel('x')
+ax.set_ylabel('Electric Field (E)')
+ax.set_title('Electric Field over time')
+ax.set_xlim(-x_max, x_max)
 
 def init():  # only required for blitting to give a clean slate.
-    _, _, _, _, E = model.predict(np.stack((t*T,X,V),axis=1))
-    line.set_ydata(E)
-    return line,
+	_, _, _, _, E = model.predict(np.stack((t*T,X,V),axis=1))
+	line.set_ydata(E)
+	return line,
 
 def animate(i):
-    _, _, _, _, E = model.predict(np.stack((i*T/100.,X,V),axis=1))
-    line.set_ydata(E)  # update the data.
-    return line,
+	_, _, _, _, E = model.predict(np.stack((i*T/100.,X,V),axis=1))
+	line.set_ydata(E)  # update the data.
+	return line,
 
 ani = animation.FuncAnimation(fig, animate, init_func=init, interval=2, blit=True, save_count=100)
 writer = animation.writers['ffmpeg'](fps=30)
 ani.save('vlasov1D_Efield.mp4',writer=writer,dpi=dpi)
-print("Done")
+print("Done Efield")
 
 import matplotlib.animation as animation
 import numpy as np
@@ -576,7 +588,7 @@ from pylab import *
 
 dpi = 100
 
-    
+
 
 
 fig, ax = plt.subplots()
@@ -589,21 +601,26 @@ Vmin = -v_max*np.ones(num)
 
 _, _, eta_pred, _, _ = model.predict(np.stack((t*T,X,Vmin),axis=1))
 _, _, n_e, _, _ = model.predict(np.stack((t*T,X,Vmax),axis=1))
-line, = ax.plot(n_e - eta_pred)
+line, = ax.plot(X, n_e - eta_pred)
+
+ax.set_xlabel('x')
+ax.set_ylabel('Electron Density ($n_e$)')
+ax.set_title('Electron Density over time')
+ax.set_xlim(-x_max, x_max)
 
 def init():  # only required for blitting to give a clean slate.
-    _, _, eta_pred, _, _ = model.predict(np.stack((t*T,X,Vmin),axis=1))
-    _, _, n_e, _, _ = model.predict(np.stack((t*T,X,Vmax),axis=1))
-    line.set_ydata(n_e - eta_pred)
-    return line,
+	_, _, eta_pred, _, _ = model.predict(np.stack((t*T,X,Vmin),axis=1))
+	_, _, n_e, _, _ = model.predict(np.stack((t*T,X,Vmax),axis=1))
+	line.set_ydata(n_e - eta_pred)
+	return line,
 
 def animate(i):
-    _, _, eta_pred, _, _ = model.predict(np.stack((i*T/100.,X,Vmin),axis=1))
-    _, _, n_e, _, _ = model.predict(np.stack((i*T/100.,X,Vmax),axis=1))
-    line.set_ydata(n_e - eta_pred)  # update the data.
-    return line,
+	_, _, eta_pred, _, _ = model.predict(np.stack((i*T/100.,X,Vmin),axis=1))
+	_, _, n_e, _, _ = model.predict(np.stack((i*T/100.,X,Vmax),axis=1))
+	line.set_ydata(n_e - eta_pred)  # update the data.
+	return line,
 
 ani = animation.FuncAnimation(fig, animate, init_func=init, interval=2, blit=True, save_count=100)
 writer = animation.writers['ffmpeg'](fps=30)
 ani.save('vlasov1D_n_e_field.mp4',writer=writer,dpi=dpi)
-print("Done")
+print("Done n_e")
