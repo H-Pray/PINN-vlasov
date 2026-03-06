@@ -548,7 +548,7 @@ from pylab import *
 
 dpi = 100
 
-
+    
 
 
 fig, ax = plt.subplots()
@@ -567,14 +567,14 @@ ax.set_title('Electric Field over time')
 ax.set_xlim(-x_max, x_max)
 
 def init():  # only required for blitting to give a clean slate.
-	_, _, _, _, E = model.predict(np.stack((t*T,X,V),axis=1))
-	line.set_ydata(E)
-	return line,
+    _, _, _, _, E = model.predict(np.stack((t*T,X,V),axis=1))
+    line.set_ydata(E)
+    return line,
 
 def animate(i):
-	_, _, _, _, E = model.predict(np.stack((i*T/100.,X,V),axis=1))
-	line.set_ydata(E)  # update the data.
-	return line,
+    _, _, _, _, E = model.predict(np.stack((i*T/100.,X,V),axis=1))
+    line.set_ydata(E)  # update the data.
+    return line,
 
 ani = animation.FuncAnimation(fig, animate, init_func=init, interval=2, blit=True, save_count=100)
 writer = animation.writers['ffmpeg'](fps=30)
@@ -588,7 +588,7 @@ from pylab import *
 
 dpi = 100
 
-
+    
 
 
 fig, ax = plt.subplots()
