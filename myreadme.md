@@ -34,7 +34,79 @@
 
 ## 快速启动与监控指令 (Cheat Sheet)
 
-### 🚀 启动开发环境
+### 首次创建容器 (First Run)
 在 Windows PowerShell 中执行以下指令，挂载代码目录并启用 GPU 支持：
 ```bash
 docker run --gpus all --shm-size=1g -v E:\PINNvlasov:/workspace --name pinn_vlasov_active -it nvcr.io/nvidia/tensorflow:22.12-tf1-py3
+```
+> 此指令仅用于**首次创建**容器。容器创建后，后续启动请使用下方的 `docker start` 指令。
+
+---
+
+### 日常工作流 (Daily Workflow)
+
+#### 1. 启动已有容器并进入交互终端
+```bash
+# 启动已停止的容器
+docker start pinn_vlasov_active
+
+# 进入容器的交互式 bash
+docker exec -it pinn_vlasov_active bash
+```
+
+#### 2. 一键启动并直接进入 (合并写法)
+```bash
+docker start pinn_vlasov_active && docker exec -it pinn_vlasov_active bash
+```
+
+#### 3. 停止容器
+```bash
+docker stop pinn_vlasov_active
+```
+
+---
+
+### 在容器内运行仿真脚本
+
+进入容器后，切换到工作目录并运行脚本：
+```bash
+cd /workspace
+
+# 朗道阻尼 (Landau Damping)
+python vlasovEfield.py
+
+# 自由流 (Free Stream)
+python vlasovFreeStream.py
+
+# 流体振荡 (Fluid Oscillations)
+python fluidOscillations.py
+
+# 边界层 (Boundary Layer)
+python boundaryLayer.py
+```
+
+---
+
+### GPU 监控与容器管理
+
+```bash
+# 实时监控 GPU 状态 (在容器内或宿主机均可)
+nvidia-smi
+
+# 持续刷新 GPU 状态 (每2秒)
+watch -n 2 nvidia-smi
+
+# 查看所有容器 (包含已停止的)
+docker ps -a
+
+# 查看容器内的 TensorFlow / GPU 是否正常
+python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
+```
+
+---
+
+### ffmpeg 安装 (容器内，首次配置时)
+
+```bash
+apt-get update && apt-get install -y ffmpeg
+```
