@@ -14,8 +14,35 @@ np.random.seed(42)
 tf.set_random_seed(42)
 
 class vlasov1DNN:
-	
+	"""
+	Physics-Informed Neural Network (PINN) for the 1D Vlasov-Poisson system with electric field.
+	Solves the Vlasov equation coupled with Gauss's law (Poisson equation) using two
+	sub-networks: one for the distribution function f(t,x,v) and one for the electric
+	potential phi(t,x).
+	"""
+
 	def __init__(self, lb, ub, layers, layersE, X_inner, E_inner, X_i, f_i, X_b, X_t, X_eta, E_b, E_t, X_E0, E_0, generator):
+		"""
+		Initialize the PINN model, build the computation graph, and set up the optimizer.
+
+		Parameters
+		----------
+		lb, ub       : lower and upper bounds of the (t, x, v) domain
+		layers       : list defining neuron counts per layer for the f/eta network
+		layersE      : list defining neuron counts per layer for the phi (E-field) network
+		X_inner      : collocation points inside the domain, shape (N, 3) as [t, x, v]
+		E_inner      : collocation points for Gauss's law, shape (N, 3) as [t, x, v]
+		X_i          : initial condition points, shape (N, 3)
+		f_i          : initial condition values of f, shape (N,)
+		X_b          : spatial boundary points at x = -x_max, shape (N, 3)
+		X_t          : spatial boundary points at x = +x_max, shape (N, 3)
+		X_eta        : points at which the eta (antiderivative) residual is evaluated
+		E_b          : electric field boundary points at x = -x_max, shape (N, 2) as [t, x]
+		E_t          : electric field boundary points at x = +x_max, shape (N, 2) as [t, x]
+		X_E0         : initial condition points for the electric field, shape (N, 2)
+		E_0          : initial electric field values, shape (N,)
+		generator    : mini-batch generator function
+		"""
 		
 		self.lb = lb
 		self.ub = ub
@@ -149,7 +176,19 @@ class vlasov1DNN:
 		self.sess.run(init)
 	
 	
-	def initialize_NN(self, layers):        
+	def initialize_NN(self, layers):
+		"""
+		Initialize weights and biases for the distribution function network (f/eta)
+		using Xavier initialization.
+
+		Parameters
+		----------
+		layers : list of ints, e.g. [3, 20, 20, 1], defining the network architecture
+
+		Returns
+		-------
+		weights, biases : lists of TensorFlow Variables
+		"""
 		weights = []
 		biases = []
 		num_layers = len(layers) 
@@ -160,7 +199,19 @@ class vlasov1DNN:
 			biases.append(b)        
 		return weights, biases
 	
-	def initialize_NN_E(self, layersE):        
+	def initialize_NN_E(self, layersE):
+		"""
+		Initialize weights and biases for the electric potential network (phi)
+		using Xavier initialization.
+
+		Parameters
+		----------
+		layersE : list of ints, e.g. [2, 15, 15, 1], defining the network architecture
+
+		Returns
+		-------
+		weights, biases : lists of TensorFlow Variables
+		"""
 		weights = []
 		biases = []
 		num_layers = len(layersE) 
@@ -172,18 +223,57 @@ class vlasov1DNN:
 		return weights, biases
 	
 	def kaiming_init(self, size):
+		"""
+		Kaiming (He) initialization for a weight matrix. Suitable for ReLU activations.
+		stddev = sqrt(2 / fan_in)
+
+		Parameters
+		----------
+		size : [in_dim, out_dim]
+
+		Returns
+		-------
+		TensorFlow Variable initialized with Kaiming normal distribution
+		"""
 		in_dim = size[0]
 		out_dim = size[1]        
 		kaiming_stddev = np.sqrt(2/(in_dim))
 		return tf.Variable(tf.truncated_normal([in_dim, out_dim], stddev=kaiming_stddev), dtype=tf.float32)
 		
 	def xavier_init(self, size):
+		"""
+		Xavier (Glorot) initialization for a weight matrix. Suitable for tanh activations.
+		stddev = sqrt(6 / (fan_in + fan_out))
+
+		Parameters
+		----------
+		size : [in_dim, out_dim]
+
+		Returns
+		-------
+		TensorFlow Variable initialized with Xavier normal distribution
+		"""
 		in_dim = size[0]
 		out_dim = size[1]        
 		xavier_stddev = np.sqrt(6/(in_dim + out_dim))
 		return tf.Variable(tf.truncated_normal([in_dim, out_dim], stddev=xavier_stddev), dtype=tf.float32)
 	
 	def forward(self, X, weights, biases, lb, ub):
+		"""
+		Forward pass through a fully-connected tanh network with input normalization.
+		Inputs are normalized to [-1, 1] before being fed through the layers.
+
+		Parameters
+		----------
+		X       : input tensor of shape (N, d)
+		weights : list of weight matrices
+		biases  : list of bias vectors
+		lb, ub  : lower and upper bounds used for input normalization
+
+		Returns
+		-------
+		Y : output tensor of shape (N, 1)
+		"""
 		num_layers = len(weights) + 1
 		H = 2.0*(X - lb)/(ub - lb) - 1.0
 		for l in range(0,num_layers-2):
@@ -196,35 +286,120 @@ class vlasov1DNN:
 		return Y
 	
 	def net_eta(self, t, x, v):
+		"""
+		Evaluate the auxiliary network output eta(t, x, v).
+		eta is the antiderivative of f with respect to v, used so that
+		f = d(eta)/dv is automatically non-negative and integrates correctly.
+
+		Parameters
+		----------
+		t, x, v : 1-D tensors of evaluation points
+
+		Returns
+		-------
+		eta : 1-D tensor of shape (N,)
+		"""
 		eta = self.forward(tf.stack([t,x,v],axis=1),self.weights,self.biases,self.lb,self.ub)
 		return tf.squeeze(eta)
 	
-	def net_phi(self,t,x):
+	def net_phi(self, t, x):
+		"""
+		Evaluate the electric potential phi(t, x) from the E-field sub-network.
+
+		Parameters
+		----------
+		t, x : 1-D tensors of evaluation points
+
+		Returns
+		-------
+		phi : 1-D tensor of shape (N,)
+		"""
 		phi = self.forward(tf.stack([t,x],axis=1),self.Eweights, self.Ebiases, self.lbE, self.ubE)
 		return tf.squeeze(phi)
 		
-	def net_E(self,t,x):
+	def net_E(self, t, x):
+		"""
+		Compute the electric field E(t, x) = -d(phi)/dx via automatic differentiation.
+
+		Parameters
+		----------
+		t, x : 1-D tensors of evaluation points
+
+		Returns
+		-------
+		E : 1-D tensor of shape (N,)
+		"""
 		phi = self.net_phi(t,x)
 		E = -tf.gradients(phi,x)[0]
 		return E
 	
-	def net_E_d(self,t,x):
+	def net_E_d(self, t, x):
+		"""
+		Compute the spatial derivative of the electric field dE/dx = -d²(phi)/dx².
+		Used to enforce periodic boundary conditions on E.
+
+		Parameters
+		----------
+		t, x : 1-D tensors of evaluation points
+
+		Returns
+		-------
+		E_x : 1-D tensor of shape (N,)
+		"""
 		phi = self.net_phi(t,x)
 		E = -tf.gradients(phi,x)[0]
 		E_x = tf.gradients(E, x)[0]
 		return E_x
 	
 	def net_f(self, t, x, v):
+		"""
+		Compute the distribution function f(t, x, v) = d(eta)/dv via automatic differentiation.
+
+		Parameters
+		----------
+		t, x, v : 1-D tensors of evaluation points
+
+		Returns
+		-------
+		f : 1-D tensor of shape (N,)
+		"""
 		eta = self.net_eta(t,x,v)
 		f = tf.gradients(eta, v)[0]
 		return f
 	
 	def net_f_d(self, t, x, v):
+		"""
+		Compute the spatial derivative df/dx via automatic differentiation.
+		Used to enforce periodic boundary conditions on f.
+
+		Parameters
+		----------
+		t, x, v : 1-D tensors of evaluation points
+
+		Returns
+		-------
+		f_x : 1-D tensor of shape (N,)
+		"""
 		f = self.net_f(t,x,v)
 		f_x = tf.gradients(f, x)[0]
 		return f_x
 	
 	def net_N(self, t, x, v):
+		"""
+		Compute the Vlasov equation residual:
+		  N = df/dt + v * df/dx - E * df/dv = 0
+
+		This residual is minimized over the interior collocation points to enforce
+		the collisionless Boltzmann (Vlasov) equation.
+
+		Parameters
+		----------
+		t, x, v : 1-D tensors of interior collocation points
+
+		Returns
+		-------
+		N : 1-D tensor of PDE residuals, shape (N,)
+		"""
 		f = self.net_f(t,x,v)
 		f_t = tf.gradients(f, t)[0]
 		f_x = tf.gradients(f, x)[0]
@@ -234,7 +409,21 @@ class vlasov1DNN:
 		N = f_t - E * f_v + v * f_x
 		return N
 	
-	def net_gauss(self,t,x,v):
+	def net_gauss(self, t, x, v):
+		"""
+		Compute the Gauss's law (Poisson equation) residual:
+		  dE/dx = 4*pi*(n_i - n_e)
+		where n_e = eta(t,x,v_max) - eta(t,x,-v_max) is the electron number density
+		and n_i = 1 is the uniform ion background.
+
+		Parameters
+		----------
+		t, x, v : 1-D tensors of interior collocation points
+
+		Returns
+		-------
+		gauss_residual : 1-D tensor of Gauss's law residuals, shape (N,)
+		"""
 		phi = self.net_phi(t,x)
 		E = -tf.gradients(phi,x)[0]
 		E_x = tf.gradients(E, x)[0]
@@ -244,13 +433,41 @@ class vlasov1DNN:
 		
 	
 	def callback(self, loss, NLoss, iLoss, bLoss, gaussLoss, EbLoss, E0Loss):
+		"""
+		Callback function invoked by the L-BFGS-B optimizer every iteration.
+		Prints a summary of all loss components every 50 iterations.
+
+		Parameters
+		----------
+		loss      : total combined loss
+		NLoss     : Vlasov PDE interior residual loss
+		iLoss     : initial condition loss for f
+		bLoss     : spatial periodic boundary condition loss for f
+		gaussLoss : Gauss's law residual loss
+		EbLoss    : periodic boundary condition loss for E and phi
+		E0Loss    : initial condition loss for E
+		"""
 		self.iters += 1
 		if self.iters % 50 == 0:
 			print('Loss: {}'.format(loss))
 			print('Interior loss: {} Initial loss: {} Boundary loss: {}'.format(NLoss, iLoss, bLoss))
 			print('E0 loss: {} Gauss\'s loss: {} E Boundary loss: {}'.format(E0Loss, gaussLoss, EbLoss))  
 	
-	def train(self, numSteps, N_inner, N_i, N_b, N_eta, N_E, N_Eb,N_E0):
+	def train(self, numSteps, N_inner, N_i, N_b, N_eta, N_E, N_Eb, N_E0):
+		"""
+		Train the PINN using L-BFGS-B optimization with mini-batch sampling.
+
+		Parameters
+		----------
+		numSteps : number of outer training epochs
+		N_inner  : mini-batch size for interior Vlasov collocation points
+		N_i      : mini-batch size for initial condition points
+		N_b      : mini-batch size for spatial boundary condition points
+		N_eta    : mini-batch size for eta evaluation points (unused if 0)
+		N_E      : mini-batch size for Gauss's law interior points
+		N_Eb     : mini-batch size for E-field boundary points
+		N_E0     : mini-batch size for E-field initial condition points
+		"""
 		for i in range(numSteps):
 			for X_inner, X_i, f_i, X_b, X_t, X_eta, E_inner, E_b, E_t, X_E0, E_0 in self.generator(self.X_inner, \
 															  self.X_i, self.f_i, self.X_b, self.X_t, self.X_eta,\
@@ -272,9 +489,27 @@ class vlasov1DNN:
 			
 				
 	def save(self):
+		"""
+		Save the current TensorFlow session (model weights) to disk as 'model.ckpt'.
+		"""
 		tf.train.Saver().save(self.sess, "model.ckpt")
 	
 	def predict(self, X_star):
+		"""
+		Run inference on a set of points and return all predicted quantities.
+
+		Parameters
+		----------
+		X_star : array of shape (N, 3) with columns [t, x, v]
+
+		Returns
+		-------
+		f_p    : predicted distribution function f(t, x, v)
+		d_p    : predicted df/dx
+		N_p    : predicted Vlasov PDE residual
+		eta_p  : predicted eta(t, x, v) (antiderivative of f w.r.t. v)
+		E_p    : predicted electric field E(t, x)
+		"""
 		f_p = self.sess.run(self.f_i_pred, {self.f_i__t: X_star[:,0], self.f_i__x: X_star[:,1], self.f_i__v: X_star[:,2]})
 		d_p = self.sess.run(self.f_d_pred, {self.f_i__t: X_star[:,0], self.f_i__x: X_star[:,1], self.f_i__v: X_star[:,2]})
 		N_p = self.sess.run(self.N_pred, {self.N__t: X_star[:,0], self.N__x: X_star[:,1], self.N__v: X_star[:,2]})
@@ -284,12 +519,66 @@ class vlasov1DNN:
 
 
 	def initialConditions(X, V, alpha, V_T):
+		"""
+		Compute the initial distribution function f(t=0, x, v).
+		Uses a Maxwellian perturbed by a sinusoidal wave:
+		  f(x, v) = exp(-v²/V_T²) / (sqrt(pi) * V_T) * (1 + alpha * sin(2x))
+
+		Parameters
+		----------
+		X     : spatial coordinates, shape (N,)
+		V     : velocity coordinates, shape (N,)
+		alpha : perturbation amplitude
+		V_T   : thermal velocity
+
+		Returns
+		-------
+		f0 : initial condition values, shape (N,)
+		"""
 		return (np.exp(-(V**2/(V_T**2)))/(math.sqrt(math.pi)*V_T)) * (1 + alpha * np.sin(2*X))
 	
-	def Einitial(X,alpha):
+	def Einitial(X, alpha):
+		"""
+		Compute the initial electric field E(t=0, x) consistent with Gauss's law
+		for the sinusoidal perturbation:
+		  E(x, 0) = 4*pi*alpha*cos(2x) / 2
+
+		Parameters
+		----------
+		X     : spatial coordinates, shape (N,)
+		alpha : perturbation amplitude
+
+		Returns
+		-------
+		E0 : initial electric field values, shape (N,)
+		"""
 		return 4*math.pi*alpha*np.cos(2*X)/2.
 	
-	def generator(X_inner, X_i, f_i, X_b, X_t, X_eta, E_inner, E_b, E_t, X_E0, E_0, N_inner, N_i, N_b, N_eta, N_E, N_Eb, N_E0): 
+	def generator(X_inner, X_i, f_i, X_b, X_t, X_eta, E_inner, E_b, E_t, X_E0, E_0, N_inner, N_i, N_b, N_eta, N_E, N_Eb, N_E0):
+		"""
+		Mini-batch generator that randomly sub-samples all training point sets.
+		Yields one batch tuple per call, used inside the training loop.
+
+		Parameters
+		----------
+		X_inner  : interior collocation points (t, x, v), shape (N, 3)
+		X_i      : initial condition points, shape (N, 3)
+		f_i      : initial condition values, shape (N,)
+		X_b      : left spatial boundary points, shape (N, 3)
+		X_t      : right spatial boundary points, shape (N, 3)
+		X_eta    : eta evaluation points, shape (N, 3)
+		E_inner  : Gauss's law interior points, shape (N, 3)
+		E_b      : E-field left boundary points, shape (N, 2)
+		E_t      : E-field right boundary points, shape (N, 2)
+		X_E0     : E-field initial condition points, shape (N, 2)
+		E_0      : E-field initial condition values, shape (N,)
+		N_*      : mini-batch sizes for each point set
+
+		Yields
+		------
+		Tuple of sub-sampled arrays: (X_inner, X_i, f_i, X_b, X_t, X_eta,
+		                               E_inner, E_b, E_t, X_E0, E_0)
+		""" 
 		v_max = 3.5
 		def sampleRows(X,N):
 			idx = np.random.choice(np.shape(X)[0], N,replace=False)
