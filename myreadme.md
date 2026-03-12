@@ -37,29 +37,35 @@
 ### 首次创建容器 (First Run)
 在 Windows PowerShell 中执行以下指令，挂载代码目录并启用 GPU 支持：
 ```bash
-docker run --gpus all --shm-size=1g -v E:\PINNvlasov:/workspace --name pinn_vlasov_active -it nvcr.io/nvidia/tensorflow:22.12-tf1-py3
+docker run --gpus all --shm-size=1g -v E:\PINNvlasov:/workspace --name pinn_vlasov_active -it pinn_vlasov_rtx4060
 ```
 > 此指令仅用于**首次创建**容器。容器创建后，后续启动请使用下方的 `docker start` 指令。
-
----
+### 查看所有容器
+```bash
+docker ps -a
+```
+### 删除容器
+```bash
+docker rm <容器ID>
+```
+### 清理所有停止的容器
+```bash
+docker container prune
+```
 
 ### 日常工作流 (Daily Workflow)
 
 #### 1. 启动已有容器并进入交互终端
+启动已停止的容器
 ```bash
-# 启动已停止的容器
 docker start pinn_vlasov_active
-
-# 进入容器的交互式 bash
+```
+进入容器的交互式 bash
+```bash
 docker exec -it pinn_vlasov_active bash
 ```
 
-#### 2. 一键启动并直接进入 (合并写法)
-```bash
-docker start pinn_vlasov_active && docker exec -it pinn_vlasov_active bash
-```
-
-#### 3. 停止容器
+停止容器
 ```bash
 docker stop pinn_vlasov_active
 ```
